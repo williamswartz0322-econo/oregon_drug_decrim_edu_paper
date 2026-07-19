@@ -1,0 +1,13 @@
+data/
+output/synth_results.rds
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.fdb_latexmk
+paper/*.fls
+paper/*.log
+paper/*.out
+paper/*.synctex.gz
+.Rhistory
+.RData
+.DS_Store
