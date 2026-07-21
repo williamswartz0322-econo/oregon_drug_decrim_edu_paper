@@ -32,32 +32,72 @@ special_preds <- c(
   lapply(c(2012, 2016), function(y) list("enrtotdrvef", y, "mean"))
 )
 
-# State-year panel for a subsample (Stata: collapse ..., by(year fips stabbr))
-make_panel <- function(df) {
-  df %>%
-    group_by(year, fips, stabbr) %>%
-    summarise(across(c(grrttot, unemprate, medinc, pct_hs_grad, enrtotdrvef),
-                     ~ mean(.x, na.rm = TRUE)), .groups = "drop") %>%
+# State-year panel for a subsample (Stata: collapse ..., by(year fips stabbr)).
+# weight = NULL gives the unweighted institution mean (Stata `collapse (mean)`);
+# weight = "enrtotdrvef" size-weights the state graduation rate by each
+# institution's mean enrollment. A time-invariant institution weight is used so
+# that the 2023 rate is still defined (contemporaneous 2023 enrollment is
+# missing in IPEDS at the time of collection).
+make_panel <- function(df, weight = NULL) {
+  if (is.null(weight)) {
+    grad <- df %>% group_by(year, fips, stabbr) %>%
+      summarise(grrttot = mean(grrttot, na.rm = TRUE), .groups = "drop")
+  } else {
+    iw <- df %>% group_by(uniti) %>%
+      summarise(.w = mean(.data[[weight]], na.rm = TRUE), .groups = "drop") %>%
+      mutate(.w = ifelse(is.finite(.w), .w, 0))
+    grad <- df %>% left_join(iw, by = "uniti") %>%
+      group_by(year, fips, stabbr) %>%
+      summarise(grrttot = if (all(is.na(grrttot)) || sum(.w[!is.na(grrttot)]) == 0)
+                            NA_real_
+                          else weighted.mean(grrttot, .w, na.rm = TRUE),
+                .groups = "drop")
+  }
+  other <- df %>% group_by(year, fips, stabbr) %>%
+    summarise(across(c(unemprate, medinc, pct_hs_grad, enrtotdrvef),
+                     ~ mean(.x, na.rm = TRUE)), .groups = "drop")
+  grad %>%
+    left_join(other, by = c("year", "fips", "stabbr")) %>%
     mutate(across(where(is.numeric), ~ ifelse(is.nan(.x), NA, .x))) %>%
     as.data.frame()
 }
 
-# One synth run: returns the treated-minus-synthetic gap over YEARS
-run_one <- function(panel, treated_id, control_ids) {
+# Donor fips with complete outcome (all YEARS) and complete 2012/2016 predictor
+# data, excluding the treated unit and any `exclude`d units.
+complete_donors <- function(panel, exclude = integer(0)) {
+  ok <- panel %>%
+    filter(year %in% YEARS) %>%
+    group_by(fips) %>%
+    summarise(ok = sum(!is.na(grrttot)) == length(YEARS) &
+                   all(!is.na(unemprate[year %in% c(2012, 2016)])) &
+                   all(!is.na(medinc[year %in% c(2012, 2016)])) &
+                   all(!is.na(pct_hs_grad[year %in% c(2012, 2016)])) &
+                   all(!is.na(enrtotdrvef[year %in% c(2012, 2016)])),
+              .groups = "drop")
+  setdiff(sort(ok$fips[ok$ok]), c(TREATED, exclude))
+}
+
+# One synth run: returns the treated-minus-synthetic gap over YEARS.
+# preds     - special.predictors list (defaults to the paper's specification)
+# custom_v  - optional pinned diagonal V (else Synth's nested optimization)
+# t_treat   - first treated period (backdating uses an earlier value)
+run_one <- function(panel, treated_id, control_ids,
+                    preds = special_preds, custom_v = NULL, t_treat = 2020) {
+  pre <- YEARS[YEARS < t_treat]
   dp <- dataprep(
     foo = panel,
-    special.predictors   = special_preds,
-    time.predictors.prior = PRE,
+    special.predictors   = preds,
+    time.predictors.prior = pre,
     dependent            = "grrttot",
     unit.variable        = "fips",
     unit.names.variable  = "stabbr",
     time.variable        = "year",
     treatment.identifier = treated_id,
     controls.identifier  = control_ids,
-    time.optimize.ssr    = PRE,
+    time.optimize.ssr    = pre,
     time.plot            = YEARS
   )
-  fit <- synth(dp)
+  fit <- if (is.null(custom_v)) synth(dp) else synth(dp, custom.v = custom_v)
   gap <- as.numeric(dp$Y1plot - dp$Y0plot %*% fit$solution.w)
   list(gap = setNames(gap, YEARS),
        y1 = setNames(as.numeric(dp$Y1plot), YEARS),
@@ -68,10 +108,16 @@ run_one <- function(panel, treated_id, control_ids) {
 }
 `%||%` <- function(a, b) if (is.null(a)) b else a
 
-pre_rmspe <- function(gap) sqrt(mean(gap[as.character(PRE)]^2))
+pre_rmspe <- function(gap, t_treat = 2020) {
+  pre <- YEARS[YEARS < t_treat]
+  sqrt(mean(gap[as.character(pre)]^2))
+}
 
-run_spec <- function(df, spec_name) {
-  panel <- make_panel(df)
+# exclude_donors - fips codes to remove from the donor pool (border/policy checks)
+# preds, custom_v, weight - passed through to make_panel/run_one (see above)
+run_spec <- function(df, spec_name, exclude_donors = integer(0),
+                    preds = special_preds, custom_v = NULL, weight = NULL) {
+  panel <- make_panel(df, weight = weight)
 
   # Synth needs complete outcome/predictor data; drop donors with gaps
   needed <- panel %>%
@@ -83,16 +129,17 @@ run_spec <- function(df, spec_name) {
                    all(!is.na(pct_hs_grad[year %in% c(2012, 2016)])) &
                    all(!is.na(enrtotdrvef[year %in% c(2012, 2016)])))
   units  <- sort(needed$fips[needed$ok])
-  donors <- setdiff(units, TREATED)
+  donors <- setdiff(units, c(TREATED, exclude_donors))
   dropped <- setdiff(unique(panel$fips), units)
   if (length(dropped)) message(spec_name, ": dropped units with missing data: ",
                                paste(dropped, collapse = ", "))
 
-  main <- run_one(panel, TREATED, donors)
+  main <- run_one(panel, TREATED, donors, preds = preds, custom_v = custom_v)
 
   # In-space placebos: each donor treated in turn, Oregon excluded
   placebos <- mclapply(donors, function(d) {
-    tryCatch(run_one(panel, d, setdiff(donors, d)), error = function(e) NULL)
+    tryCatch(run_one(panel, d, setdiff(donors, d), preds = preds, custom_v = custom_v),
+             error = function(e) NULL)
   }, mc.cores = max(1, detectCores() - 2))
   names(placebos) <- donors
   placebos <- placebos[!vapply(placebos, is.null, logical(1))]
@@ -115,6 +162,13 @@ run_spec <- function(df, spec_name) {
   list(name = spec_name, panel = panel, main = main, placebos = placebos,
        results = res, n_placebo = length(placebos))
 }
+
+# Downstream robustness scripts (04-06) `source()` this file only to reuse the
+# functions above. Setting SYNTH_LIB_ONLY <- TRUE before sourcing skips the
+# baseline run below. Running the script directly executes everything as before.
+if (exists("SYNTH_LIB_ONLY") && isTRUE(SYNTH_LIB_ONLY)) {
+  message("03_synth.R sourced in library-only mode; skipping baseline run.")
+} else {
 
 specs <- list(
   pooled  = run_spec(master, "pooled"),
@@ -196,3 +250,5 @@ for (s in names(specs)) {
 cat("\nPooled donor weights (>0.001):\n")
 w <- sort(pooled$main$w[pooled$main$w > 0.001], decreasing = TRUE)
 print(round(w, 3))
+
+}  # end baseline-run guard

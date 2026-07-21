@@ -30,14 +30,38 @@ nested optimization for the predictor-weight matrix V, while Stata's
 ## Pipeline
 
 ```sh
-Rscript R/01_build_data.R      # build institution-year master panel -> data/master.rds
-Rscript R/02_descriptives.R    # Table 1, Figures 1-4
-Rscript R/03_synth.R           # synthetic control + placebo inference, Tables 2-5, Figures 5-6
+Rscript R/01_build_data.R        # build institution-year master panel -> data/master.rds
+Rscript R/02_descriptives.R      # Table 1, Figures 1-4
+Rscript R/03_synth.R             # synthetic control + placebo inference, Tables 2-5, Figures 5-6
+Rscript R/04_covid_robustness.R  # in-time placebo (backdating) COVID diagnostic
+Rscript R/05_donor_pool.R        # border/policy donor exclusions, leave-one-out
+Rscript R/06_scm_sensitivity.R   # MSPE-ratio rank test, predictor/V/weighting sensitivity
+Rscript R/07_alt_estimators.R    # Synthetic DiD + Augmented SCM (needs synthdid, augsynth)
 cd paper && latexmk -pdf paper.tex   # compile the paper
 ```
 
+Scripts `04`-`07` reuse the functions in `03_synth.R` (sourced in library-only
+mode) and require `03` to have been run once for the baseline
+`output/synth_results.rds`.
+
 R packages required: `dplyr`, `tidyr`, `readr`, `stringr`, `haven`,
-`ggplot2`, `Synth`.
+`ggplot2`, `Synth`. The alternative estimators in `07` additionally need two
+GitHub-only packages plus `glmnet`:
+
+```r
+install.packages(c("glmnet", "LowRankQP"))
+remotes::install_github("synth-inference/synthdid")
+remotes::install_github("ebenmichael/augsynth")
+```
+
+## Robustness
+
+`R/04`-`R/07` implement the robustness analysis (see the paper's Robustness
+section): a COVID-19 in-time placebo, donor-pool restrictions (dropping
+Oregon's border states and states with concurrent drug-policy changes) plus a
+leave-one-out check, an MSPE-ratio permutation test, predictor/`V`/weighting
+sensitivity, and two alternative estimators (Synthetic DiD and Augmented SCM
+with confidence intervals). The null result holds throughout.
 
 ## Layout
 

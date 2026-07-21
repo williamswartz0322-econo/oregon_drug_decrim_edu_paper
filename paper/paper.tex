@@ -237,11 +237,15 @@ construct a synthetic Oregon.
 \footnotesize
 Graduation Rate and Enrollment Total come from IPEDS. Enrollment Total was
 missing for 2023 since it had yet to be calculated. Grad Degree comes from
-the ACS, which is the estimated percent of civilian population 25 years or
-older with a professional or graduate degree. The remaining variables also
-come from the ACS. All ACS estimates were missing for 2020. No missing
-predictor variables are of concern when constructing synthetic Oregon since
-no pre-treatment data is missing.
+the ACS. Its ACS series definition changes within the panel---``percent of
+population 25 or older that is a high school graduate or higher'' through
+2018, and ``percent with a graduate or professional degree'' from 2019
+onward---which accounts for the wide range in Table~\ref{tab:descriptives};
+because only the 2012 and 2016 values (both on the earlier definition) enter
+the synthetic-control predictors, the estimation is unaffected. The remaining
+variables also come from the ACS. All ACS estimates were missing for 2020. No
+missing predictor variables are of concern when constructing synthetic Oregon
+since no pre-treatment data is missing.
 \end{minipage}
 \end{table}
 
@@ -349,8 +353,12 @@ Measure 110. Although the pandemic affected every state, local responses,
 severity, and the resulting impact on educational outcomes likely varied.
 Ideally, controlling for a time fixed effect and including an interaction
 term between COVID-19 severity and state would help mitigate these
-confounding effects. I believe a Synthetic DiD framework may better suit
-this kind of analysis in further research.
+confounding effects. To address this directly, the robustness section
+reports a Synthetic Difference-in-Differences estimator
+\cite{arkhangelsky2021synthetic}, which admits a common time shock through
+time weights and so differences out a nationwide pandemic effect rather than
+attributing it to the treatment, together with in-time placebo (backdating)
+tests that check whether the pandemic alone generates a spurious effect.
 
 To credibly estimate a causal impact, several assumptions must hold. Most
 critically, the synthetic control method relies on the assumption that, in
@@ -359,10 +367,12 @@ composite of donor states. This requirement necessitates strong
 pre-treatment fit between Oregon and the synthetic counterpart, which is
 explored in my preliminary results. Another key assumption is that Measure
 110 does not significantly alter outcomes in other states, since potential
-cross-border effects would compromise the donor states' validity. However,
-no border states are given any weight in my donor pool. Ideally, I would
-like to have removed individual institutions that border Oregon but due to
-time constraints, this was not possible. I am not worried about student
+cross-border effects would compromise the donor states' validity. Nevada, a
+state bordering Oregon, in fact receives the largest weight in the main
+synthetic control, so I address this concern directly in the robustness
+section by re-estimating with all four bordering states (California, Idaho,
+Nevada, and Washington) removed from the donor pool. I am not worried about
+student
 migrations due to IPEDS' calculation of graduation rates being via cohort
 and controlling for transfers in and out. Though even if you did believe
 graduation rates were being affected by student migration because of
@@ -468,6 +478,175 @@ tests (R implementation of \texttt{synth\_runner}).
 \footnotesize
 Urban institutions. ATTs and p-values constructed via in-space placebo
 tests (R implementation of \texttt{synth\_runner}).
+\end{minipage}
+\end{table}
+
+\section{Robustness}
+
+Because the headline result is a null, its credibility rests on showing that
+it survives reasonable perturbations of the design and that the two most
+serious confounds---the COVID-19 pandemic and contamination of the donor
+pool---do not overturn it. This section addresses each in turn and closes
+with specification and inference checks.
+
+\subsection{COVID-19 confounding}
+
+Measure 110 took effect in February 2021, inside the pandemic's disruption of
+higher education, so a natural worry is that any post-2020 gap between Oregon
+and its synthetic counterpart reflects state-specific pandemic effects rather
+than the policy. I address this in two ways. First, I re-estimate the effect
+using Synthetic Difference-in-Differences \cite{arkhangelsky2021synthetic},
+which augments the synthetic control with time weights and a difference-in-
+differences structure so that a common nationwide shock is differenced out
+rather than attributed to the treatment. Second, I run in-time placebo
+(backdating) tests: I assign a \emph{fake} treatment year that precedes both
+the policy and the pandemic (2018 and 2019) and check whether a spurious
+``effect'' appears once COVID-19 hits. As Figure~\ref{fig:intime} and
+Table~\ref{tab:intime} show, backdated treatments produce 2020--2021 gaps
+comparable in magnitude to Oregon's true post-2020 gap, indicating that the
+observed movement is largely pandemic-driven common variation rather than a
+Measure 110 effect. The SDID estimates in Table~\ref{tab:altest} tell the
+same story: the estimated ATT is small and its confidence interval includes
+zero in every specification.
+
+\begin{figure}[htbp]
+\centering
+\caption{In-Time Placebo Tests (Backdated Treatment)}
+\label{fig:intime}
+\includegraphics[width=0.85\textwidth]{fig_intime_placebo.png}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{In-Time Placebo: Pandemic-Window Gaps by (Fake) Treatment Year}
+\label{tab:intime}
+\input{../output/tables/table_intime_placebo.tex}
+\begin{minipage}{0.8\textwidth}
+\vspace{4pt}
+\footnotesize
+Estimated Oregon-minus-synthetic gap in the 2020 and 2021 pandemic-window
+years under the actual 2020 treatment date and two pre-policy, pre-COVID fake
+treatment dates. Comparable gaps under the fake dates indicate the post-2020
+movement reflects the pandemic rather than Measure 110.
+\end{minipage}
+\end{table}
+
+\subsection{Donor-pool contamination}
+
+Two threats concern the donor pool. First, cross-border spillovers: if Measure
+110 changed behavior in neighboring states, those states are invalid controls.
+Because Nevada---an Oregon border state---receives the largest weight in the
+main fit, I re-estimate all four specifications with California, Idaho, Nevada,
+and Washington removed from the donor pool (Table~\ref{tab:noborder}). Doing so
+cuts the pooled 2023 estimate roughly in half, from 4.05 to 2.48 percentage
+points, and it remains statistically insignificant ($p = 0.24$); the other
+three subsamples are essentially unchanged. Second, a broader ``harm-reduction
+wave'': several donor states liberalized their own drug or
+recreational-marijuana laws during 2020--2023, which could bias the
+counterfactual. Re-estimating the pooled specification with those ten states
+removed leaves the 2023 estimate near its main value (4.24); its raw placebo
+p-value falls to 0.05, but the RMSPE-standardized p-value---less sensitive to
+the smaller placebo pool---remains insignificant at 0.13. Finally, a
+leave-one-out exercise (Figure~\ref{fig:loo}) drops each positive-weight donor
+in turn: removing Nevada lowers the 2023 gap to 2.28 while every other donor
+leaves it between 3.9 and 4.9, and no single exclusion makes the estimate
+significant ($p$ between 0.14 and 0.33). The magnitude of the (insignificant)
+post-2020 gap is thus largely a Nevada artifact, and no donor-pool restriction
+overturns the null.
+
+\begin{table}[htbp]
+\centering
+\caption{ATTs with Border States Removed from the Donor Pool}
+\label{tab:noborder}
+\input{../output/tables/table_att_pooled_noborder.tex}
+\begin{minipage}{0.8\textwidth}
+\vspace{4pt}
+\footnotesize
+Pooled specification with California, Idaho, Nevada, and Washington excluded
+from the donor pool. Per-period ATTs and in-space placebo p-values.
+\end{minipage}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\caption{Leave-One-Out: 2023 ATT with Each Positive-Weight Donor Removed}
+\label{fig:loo}
+\includegraphics[width=0.85\textwidth]{fig_loo_pooled.png}
+\end{figure}
+
+\subsection{Alternative estimators, specification, and inference}
+
+Table~\ref{tab:altest} reports the Synthetic DiD and Augmented SCM
+\cite{benmichael2021augmented} estimates side by side. Augmented SCM
+ridge-corrects any residual pre-treatment imbalance and returns a confidence
+interval; that interval is informative about \emph{power}, as it bounds the
+effect sizes the design could plausibly detect. The pooled average
+post-treatment ATT is 1.04 points under Synthetic DiD (95\% CI $[-3.29,
+5.38]$) and 1.45 points under Augmented SCM (95\% CI $[-1.38, 3.54]$); every
+interval, in every subsample, includes zero. The width of these intervals is
+itself informative: with only three post-treatment years and a single treated
+state, the design can rule out large effects but not moderate ones, so the
+null should be read as ``no evidence of a sizable effect'' rather than
+``evidence of no effect.''
+
+Table~\ref{tab:rank} adds the Mean Squared Prediction Error ratio test
+\cite{abadie2010synthetic}, an overall permutation p-value that ranks Oregon's
+post-to-pre MSPE ratio against the placebo distribution; Oregon is not an
+outlier in any subsample. Table~\ref{tab:spec} varies the specification: using
+three outcome lags plus covariates, covariates only, and an
+enrollment-weighted state collapse, as well as pinning the predictor-weight
+matrix $V$ to Stata's regression-based heuristic rather than the nested
+optimum. The point estimate is itself fragile---the 2023 pooled gap ranges
+from slightly negative under the enrollment-weighted collapse to roughly five
+percentage points under a three-lag specification---but it is statistically
+insignificant throughout and is not even robust in sign. If anything, this
+fragility reinforces the central finding: there is no stable, detectable
+Measure 110 effect, and the headline magnitude is an artifact of the specific
+predictor set and $V$-selection method rather than a real treatment response.
+The $V$-selection comparison also documents the one material discrepancy
+between this analysis and the original Stata results: the nested optimization
+used by R's \texttt{Synth} and Stata's regression-based default produce
+slightly different weights and hence estimates (for example, a 2023 pooled ATT
+of 4.05 versus 4.22), while leaving every inferential conclusion unchanged.
+
+\begin{table}[htbp]
+\centering
+\caption{Alternative Estimators: Synthetic DiD and Augmented SCM}
+\label{tab:altest}
+\input{../output/tables/table_alt_estimators.tex}
+\begin{minipage}{0.9\textwidth}
+\vspace{4pt}
+\footnotesize
+Average post-period ATT with 95\% confidence intervals. Synthetic DiD standard
+errors are from the placebo method; Augmented SCM (ridge) intervals are
+jackknife. Every interval includes zero.
+\end{minipage}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{MSPE-Ratio Permutation Test}
+\label{tab:rank}
+\input{../output/tables/table_rank_test.tex}
+\begin{minipage}{0.9\textwidth}
+\vspace{4pt}
+\footnotesize
+Ratio of post-treatment to pre-treatment MSPE for Oregon, its rank among all
+units (treated plus placebos), and the rank-based p-value.
+\end{minipage}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Specification and $V$-Selection Sensitivity (Pooled ATT)}
+\label{tab:spec}
+\input{../output/tables/table_spec_sensitivity.tex}
+\begin{minipage}{0.9\textwidth}
+\vspace{4pt}
+\footnotesize
+Pooled per-year ATTs under alternative predictor sets, an enrollment-weighted
+state collapse, and Stata's regression-based $V$ (rather than the nested
+optimum used in the main analysis).
 \end{minipage}
 \end{table}
 

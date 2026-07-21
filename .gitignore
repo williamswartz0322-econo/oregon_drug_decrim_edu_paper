@@ -1,5 +1,5 @@
 data/
-output/synth_results.rds
+output/*.rds
 paper/*.aux
 paper/*.bbl
 paper/*.blg
